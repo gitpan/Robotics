@@ -1,0 +1,7 @@
+Revision history for Robotics
+
+0.10    20 Jun 2009
+        First version, originally Bio::Robotics and Bio::Robotics::Tecan.
+0.20    10 Aug 2009
+        Register namespace, Robotics and Robotics::Tecan.
+

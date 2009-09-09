@@ -1,0 +1,23 @@
+---
+version: 2009-09-04
+tecan:
+  genesis:
+    points:
+      roma0:
+        magnet-hover: '14056,1850,980,1800'
+        magnet-place: '14056,1850,687,1800'
+        sampletray-hover: '14057,2828,980,1800'
+        sampletray-place: '14057,2828,582,1800'
+        shaker-hover: '1780,3569,1535,1800'
+        shaker-put: '1780,3569,865,1800'
+        shaker-take: '1780,3569,865,1800'
+        shakerlock-1: '1762,1177,1535,900'
+        shakerlock-2: '1762,1177,815,900'
+        shakerlock-3: '1191,1177,808,900'
+        shakerlock-4: '1762,1177,815,900'
+        shakerlock-5: '1762,1177,1535,900'
+        shakerlock-6: '1780,3569,1535,1800'
+        shakerlock-hover: '1780,3569,1535,1800'
+        HOME1: '11165,2525,980,1800'
+
+...
