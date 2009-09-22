@@ -1,31 +1,32 @@
-
 package Robotics::Tecan;
-
-# vim:set nocompatible expandtab tabstop=4 shiftwidth=4 ai:
-# $Id$
 
 use warnings;
 use strict;
+use Moose; 
+use Carp;
 
-use Robotics::Tecan::Genesis;
+has 'connection' => ( is => 'rw' );
+has 'serveraddr' => ( is => 'rw' );
+has 'password' => ( is => 'rw' );
+has 'port' => ( is => 'rw', isa => 'Int' );
+has 'token' => ( is => 'rw');
+has 'VERSION' => ( is => 'rw' );
+has 'STATUS' => ( is => 'rw' );
+has 'HWTYPE' => ( is => 'rw' );
+has 'DATAPATH' => ( is => 'rw', isa => 'Maybe[Robotics::Tecan]' );
+has 'COMPILER' => ( is => 'rw' );
+has 'compile_package' => (is => 'rw', isa => 'Str' );
 
-our $PIPENAME;
+use Robotics::Tecan::Gemini;  # Software<->Software interface
+use Robotics::Tecan::Genesis; # Software<->Hardware interface
+use Robotics::Tecan::Client;
+with 'Robotics::Tecan::Server';
 
-#use AutoLoader qw(AUTOLOAD);
-
-#require Exporter;
-#our @ISA = qw(Exporter);
-
+# note for gemini device driver:
+# to write a "dying gasp" to the filehandle prior to closure from die,
+# implement DEMOLISH, which would be called if BUILD dies
 
 my $Debug = 1;
-
-#our @EXPORT = qw(
-#    Write
-#    Read
-#    new
-#);
-
-
 
 =head1 NAME
 
@@ -33,240 +34,93 @@ Robotics::Tecan - Control Tecan robotics hardware as Robotics module
 
 =head1 VERSION
 
-Version 0.21
+Version 0.22
 
 =cut
 
-our $VERSION = '0.21';
+our $VERSION = '0.22';
 
+=begin text
 
-=head1 SYNOPSIS
+Data Flow block diagram:
 
-Easy to use software interface for Tecan robotics devices.  
-Query the locally-connected hardware, attach to the hardware, use the
-high level functions to send individual or multiple commands to the robotics.
+ (Robotics object) -->  (Tecan object)  --future-work--> (other device object)
+                          |                                           |
+                          v                                           v
+             (Genesis device object)  -----> Genesis::DATAPATH -> Tecan::Client
+                          ^
+                          +---------------<- Genesis::DATAPATH <- Tecan::Server
+                          v
+                  (Gemini object)   -----> named pipe  <->  hardware
 
-NO WARRANTIES: Bugs in this software or any related software may possibly cause
-physical damage to robotics hardware and/or equipment operators.  Be careful.
-
-The following are required to communicate between Perl (or any scripting language)
-and the Tecan robotics:
-=over 4
-Tecan requires the "Gemini" application to be running (and perhaps logged in).
-The login account may require special flags set to enable third-party
-communication.  The Tecan hardware may also require hardware options to enable
-third-party communication (to turn on "the named pipe").  This hardware option
-is referred to as a "hardware lock" (a dongle attached to the application
-computer).  The "named pipe" must exist and be writable/readable to the local
-user; this is outside of Perl control.  When in doubt here, verify capabilities
-with Tecan support.
-=back
-
-Example:
-
-	use Robotics;
-	use Robotics::Tecan;
-
-    $hardware = Robotics->query();  # Print available robots
-    if (!($hardware =~ /Tecan/)) {
-    	die "Where's the Tecan?\n";
-    } 
-   	my $tecan = Robotics::Tecan->new();
-   	$tecan->attach();
-    if (!($tecan->version =~ /Version 4.1.0.0/)) {
-   		$tecan->detach();
-       	die "Robot version mismatch: Exit.\n";
-   	}
-    $tecan->home();
-    $tecan->configure("worktable.yaml");
-    $tecan->pipette( ... );
-    ...
-
-=head1 EXPORT
-
-=item *  Write
-=item *  Read
-
-=head1 FUNCTIONS
-
-=head2 new
-
-Allocate new object for communication to Tecan hardware.
-
-Arguments: (optional) Object class.
-
-
-Returns:  Object, or 0 if communication fails to initialize.
 
 =cut
 
-sub new {
-    my $class = shift;
-    my $self = {};
+sub BUILD {
+    my ( $self, $params ) = @_;
 
-    my $connection = "local";
-    my $server;
-    my $serverport;
-    my $serverpassword;
-    while(@_) {
-        my $key = shift;
-        $key =~ s/^-//;
-        my $value = shift;
-        if ($key eq "server") { 
-            my @host = split(":", $value);
-            $server = shift @host;
-            $serverport = shift @host;
-            $connection = "remote"; 
-        }
-        if ($key eq "serverport") { $serverport = $value; }
-        if ($key eq "password") { $serverpassword = $value; } 
-    }
-
-    if ($connection eq "local") { 
-        my $incompatibility = "Win32::Pipe";
-        eval "use $incompatibility;" || warn "Must have Win32::Pipe installed for local hardware connection\n";
-        #use Win32::Pipe;
-        no strict;
-
-        if (!$Robotics::Tecan::PIPENAME) { 
-            die "no pipe name";
-        }
-        # Win32::Pipe constants:
-        #   timeout = in millisec
-        #   flags = PIPE_TYPE_BYTE(=0x0)  
-        #   state = PIPE_READMODE_BYTE(=0x0)
-        $| = 1;
-        my $timeout = NMPWAIT_NOWAIT;
-        my $flags = 0;
-        my $pipe;
-        my $data;
-        
-        # warn "!! Opening Win32::Pipe(".$Robotics::Tecan::PIPENAME.")";
-        $pipe = new Win32::Pipe($Robotics::Tecan::PIPENAME, $timeout, $flags);
-        if (!$pipe) { 
-            warn "cant open named-pipe $Robotics::Tecan::PIPENAME\n";
-            return 0;
-        }
-        # warn "!! Got Win32::Pipe(), $pipe";
-
-        if (0) {
-            # test communication
-            $pipe->Write("GET_VERSION\0");
-            $data = $pipe->Read();
-            if (!$data) { 
-                # no reply
-                $pipe->Close();
-                warn "No response from hardware; pipe closed";
-                return undef;
-            }
-        }
-
-        # communication ok
-        $self->{FID} = $pipe;
-        $self->{ATTACHED} = undef;
-    }
-    elsif ($connection eq "remote") { 
-        use IO::Socket;
-        
-        if (!$serverport) { die "Must specify port for server $server\n"; }
-        my $sock = IO::Socket::INET->new( Proto     => "tcp",
-                         PeerAddr  => $server,
-                         PeerPort  => $serverport)
-             || die "cannot connect to $server:$serverport\n";
-        $sock->autoflush(1);
-        $self->{SOCKET} = $sock;
-        $self->{SERVER} = $server;
-        $self->{SERVERPORT} = $serverport;
-        $self->{SERVERPASSWORD} = $serverpassword;
-        $self->{ATTACHED} = undef;
-        my $reply = <$sock>;
-    }
-
-    $self->{VERSION} = undef;
-    $self->{HWTYPE} = undef;
-    $self->{STATUS} = undef;
+    # Do only if called directly
+    return unless $self->connection;
     
-    bless($self, $class);
-    return $self;
+    my $connection = "local";
+    
+    my $server = $self->serveraddr;
+    my $serverport;
+
+    if ($server) { 
+        my @host = split(":", $server);
+        $server = shift @host;
+        $serverport = shift @host || $self->port;
+        $connection = "remote"; 
+    }
+    if ($self->connection) {
+        $self->compile_package( (split(',', $self->connection))[1] );
+        if ($connection eq "local") { 
+            # Use Gemini
+            warn "Opening Robotics::Tecan::Gemini->openPipe()\n" if $Debug;
+            $self->DATAPATH(
+                    Robotics::Tecan::Gemini->new(
+                        object => $self)
+                );
+        }
+        elsif ($connection eq "remote") { 
+            # Use Robotics::Tecan socket protocol
+            warn "Opening Robotics::Tecan::Client to $server:$serverport\n" if $Debug;
+            $self->DATAPATH( 
+                    Robotics::Tecan::Client->new(
+                        object => $self,
+                        server => $server, port => $serverport, 
+                        password => $self->password)
+                    );
+        }
+    
+        $self->VERSION( undef );
+        $self->HWTYPE( undef );
+        $self->STATUS( undef );
+        $self->password( undef );
+    }
+    else { 
+       die "must give 'connection' for ".__PACKAGE__."->new()\n";
+    }
 }
 
-=head2 _find
-Internal function only.  Do not call.
+=head2 probe
+ 
 =cut
-sub _find {
-	my %found;
-	
-    # Find Tecan Gemini by using Win32 API to look for running Gemini process.
-    #
-    #  Note: There is not much better way to find Tecan.  cygwin-perl cant
-    #  access or test the named pipe at all.  If attempting to open a
-    #  nonexistant pipe with Win32::Pipe and it doesn't exist, the process will
-    #  hang.  So no good alternatives except to look for Gemini.exe in process
-    #  list.
+sub probe {
+    my ($self, $params) = @_;
+	my (%all, %found);
 
-    # JC: Pipe name begins with \\ to assure Win32 local server context
-	# Created by Tecan 'Gemini' gui app after local login
-
-	# Win32 Incompatibility note:
-	#  On Win32, the named pipe string is escaped differently running under
-	#  cygwin-perl or running under cmd.exe+ActivePerl. cygwin-perl will attempt to
-	#  use cygdrive paths and will fail to open the pipe. cygwin+activestate perl
-	#  will succeed (because it does not use cygdrive paths?).
-	#  Win32 Named Pipe "filename" format is: '\\\\SERVER/pipe/filename' 
-	#       or use dot for local server '\\\\./pipe/filename' 
-	#  '\\\\./pipe/gemini' or any combination does not work under cygwin+perl.
-	#  '\\\\./pipe/gemini' works under cmd.exe+ActivePerl or cygwin+ActivePerl.
-	if ($ENV{"PATH"} =~ m#/cygdrive/c# || $ENV{"PATH"} =~ m#Program Files#) {
-	    # Found windows machine
-	    if (($^X =~ m^\\Perl\\bin^i)) { 
-	        # Activestate perl
-	        warn "Recommend using cygwin-perl not Activestate Perl for Tecan named pipe: not tested\n";
-	    }
-	    else {
-	        # found cygwin-perl
-	    }
-	    # Assume running under cygwin+ActiveState Perl or cmd.exe+ActiveState Perl
-	    #  or cygwin+cygwin-perl
-	    # Tested under: "This is perl, v5.10.0 built for MSWin32-x86-multi-thread"
-	    # Tested under: "This is perl, v5.10.0 built for cygwin-thread-multi-64int"
-	    $PIPENAME="\\\\.\\pipe\\gemini";
-	}
-	else {
-		# not on Win32 so assume for simulation/test only
-		warn "!! SIMULATION PIPE=TRUE\n";
-		$PIPENAME = '/tmp/__gemini';
-		unlink($PIPENAME);		# XXX: revisit this
-	}
-
-    if (-d "c:/Program Files/Tecan/Gemini") {
-        # For Win32 support only
-        my $incompatibility = "Win32::Process::List";
-        eval "use $incompatibility";
-        # -- end Win32 modules
-
-        warn "Found Tecan Gemini, checking if running\n";
-        # Found Gemini application however it may not be running.
-        $found{"Tecan-Gemini"} = "not started";
-
-        # Must search for Gemini as running process or attempting to
-        # open the pipe will permanentily hang the parent process.
-        # But, no way to do this in Win32.
-        my $obj = Win32::Process::List->new();
-        if ($obj->GetProcessPid("gemini")) { 
-            $found{"Tecan-Gemini"} = "ok";
-            warn "Robotics.pm: Found Tecan Gemini, App is Running\n";
-        }
-        else { 
-            warn "Robotics.pm: Found Tecan Gemini, App is NOT RUNNING\n";
-        }
-	}
-	# TODO Enhance this to return multiple machines with automatic names, if possible
-	#$found{"Tecan-Gemini"} .= " genesis0:M1";
-	
-	return %found;
+    # Find software interfaces then hardware interfaces
+    %found = %{Robotics::Tecan::Gemini->probe()};
+    %all = (%all, %found); 
+    %found = %{Robotics::Tecan::Genesis->probe()};
+    %all = (%all, %found); 
+    
+    return \%all;
 }
 
-=head2 Attach
+=head2 attach
 
 Start communication with the hardware.
 
@@ -287,246 +141,451 @@ Will not attach to "BUSY" hardware unless override flag is given.
 sub attach {
     my ($self) = shift;
     my $flags = shift || "";
-
-    if ($self->{FID}) { 
-        # Notes on gemini named pipe:
-        #   * must run gemini application first
-        #   * user must have installed "hardware key" (parallel port dongle)
-        #   * login is required(?) sometimes(?)
-        #   * must terminate commands with \0   (undocumented)
-        #   * input terminated by \0
-        #   * Big problem: can not use F_NOBLOCK on windows with activeperl so
-        #   must read char at a time and check for \0 on input
-        #       * Use CPAN Win32::Pipe to avoid issues
-        #   * must use binmode() for pipe to look for the \0 and act unbuffered
-        #       * Use CPAN Win32::Pipe to avoid issues
-        #   * if command sent is not terminated by \0, then tecan s/w will
-        #    send the same buffer as before, i.e. "GET_STATUSpreviousstuff"
-        #	 or other buffer garbage
-        #   * commands are case-insensitive
-        #   * Use the gemini app "Gemini Log" window to view cmds/answers
-        #   * The variables (like Set_RomaNo) use 0-based index (0,1,..) whereas
-        #       the gemini GUI uses 1-based index (1,2,..)
-
-        $self->{ATTACHED} = 1;
-        $self->Write("GET_VERSION");
-        $self->{VERSION} = $self->Read() || "";
-        print STDERR "\nVersion: $self->{VERSION}\n" if $Debug;
-        $self->Write("GET_RSP");
-        $self->{HWTYPE} = $self->Read() || "";
-        print STDERR "\nHardware: $self->{HWTYPE}\n" if $Debug;
-
-        if (!($self->{HWTYPE} =~ /GENESIS/i)) {
-            $self->detach();
-            warn "Robotics is not Genesis; reports '$self->{HWTYPE}': closed named-pipe\n";
-            return 0;
+    if ($self->DATAPATH()) { 
+        $self->DATAPATH()->attach(option => $flags);
+        if ($self->DATAPATH()->attached &&
+                $self->compile_package) { 
+            # Create a machine compiler for the attached hardware
+            $self->COMPILER($self->compile_package()->new());
+            # Compiler needs datapath for internal sub's
+            $self->COMPILER()->DATAPATH( $self->DATAPATH() );
         }
-
-        # XXX assign this via arg to new, user discovers value from query
-        # The HWALIAS and HWNAME should be set via hardware probe, user
-        # discovers value from query
-        $self->{HWALIAS} = "genesis0";
-        $self->{HWNAME} = "M1";
-
-        my $m = $self->{HWNAME};
-        # Scan and get hardware device specifics
-        # no. arms, diluters, options, posids, 
-        # romas, uniports, options, voptions
-        my $d;
-        for $d (0 .. 7) { 
-            $self->Write($m."RDS".$d.",1");
-            $self->{HWSPEC} .= $self->Read();
-        }
-        print STDERR "\nHW Spec: $self->{HWSPEC}\n" if $Debug;
-
-        # Scan and Get hardware options (optional i/o board)
-        # "maximum two different devices accessible" using RRS
-        $self->Write($m."ARS");  # SCAN
-        $self->Read();
-        for $d (1 .. 2) { 
-            $self->Write($m."RRS".$d); # Report device on chN
-            $self->{HWOPTION} .= $self->Read();
-        }
-        print STDERR "\nHW Options: $self->{HWOPTION}\n" if $Debug;
-
-
     }
-    elsif ($self->{SERVER}) { 
-        my $socket = $self->{SOCKET};
-        warn "AUTHENTICATING\n";
-        my $tries = 0;
-        my $reply;
-        if (!$self->{SERVERPASSWORD}) {
-        	die "Must supply server password\n";
-        }
-        while ($reply = <$socket>) { 
-            print STDOUT $reply;
-            if ($reply =~ /^login:/) { 
-                print $socket $self->{SERVERPASSWORD} . "\n";
-            }
-            if ($reply =~ /Authentication OK/i) { 
-                $tries = 0;
-                last;
-            }
-            $tries++;
-            if ($tries > 3) { last; }
-        }
-        if ($tries) { 
-            $self->detach();
-            warn "can not authenticate to tecan network server\n";
-            return 0;
-        }
-        $self->{SERVERPASSWORD} = undef;
-        
-        warn "ATTACHED\n";
-        $self->{ATTACHED} = 1;
-        $self->Write("GET_VERSION");
-        $self->{VERSION} = $self->Read();
-        print STDERR "\nVersion: $self->{VERSION}\n" if $Debug;
-        $self->Write("GET_RSP");
-        $self->{HWTYPE} = $self->Read();
-        print STDERR "\nHardware: $self->{HWTYPE}\n" if $Debug;
-        if (!($self->{HWTYPE} =~ /GENESIS/)) {
-            $self->detach();
-            warn "Robotics is not Genesis; reports '$self->{HWTYPE}': closed network\n";
-            return 0;
-        }
-        # Force client to only attach if Robot is IDLE
-        $self->Write("GET_STATUS");
-        $self->{STATUS} = $self->Read();
-        print STDERR "\nStatus: $self->{STATUS}\n" if $Debug;
-        if (!($self->{STATUS} =~ /IDLE/)) {
-            warn "Robotics is not idle; reports '$self->{STATUS}'\n";
-            if ($flags =~ !/o/i) {
-                $self->detach();
-                warn "closed network\n";
-                return 0;
-            }
-        }
-        
-        # XXX assign this via arg to new, user discovers value from query
-        # The HWALIAS and HWNAME should be set via hardware probe, user
-        # discovers value from query
-        $self->{HWALIAS} = "genesis0";
-        $self->{HWNAME} = "M1";
-
-        my $m = $self->{HWNAME};
-    }
-
-    return $self->{VERSION};
-
+    return $self->VERSION();
 }
 
+sub hw_get_version {
+    my $self = shift;
+    return $self->command("GET_VERSION");
+    
+}
 
-=head2 startService
+=head2 Write
 
-=item (Special method - Not normally used - Experimental)
-
-Attempt to start the Windows GUI application associated with Tecan (such as
-running "Gemini.exe").  Since this will occur under Win32, and there is no 
-mechanism for forking, this call will likely never return.  Best not to
-call this method if the Tecan application is already running: unexpected
-Win32 results may occur.
-
-This method should only be used when "Desktop" access to start the Tecan
-application is unavailable (such as starting the service from a remote
-machine over the network).  
-
-Usage, for Tecan: 
-Do query() first, to see if the robotics is "not started"; if it is not, use
-this function to start Gemini, then query() again (the second time should find
-the named pipe).
-
+Function to send a command to hardware Robotics device driver.
 
 =cut
 
-sub startService {
-    my $incompatibility = "Win32::Process";
-    eval "use $incompatibility";
-
-    my $exe = 'c:\\Program Files\\Tecan\\Gemini\\Gemini.exe';
-    # Experimental code follows
-
-    my $obj;
-    if (0) { 
-        # This doesnt seem to work in winxp test
-        Win32::Process::Create($obj,
-                                $exe,
-                                "",
-                                0,
-                                NORMAL_PRIORITY_CLASS,
-                                ".")|| die "Win32 process error with $exe\n";
-    }
-    return $obj;
+sub Write {
+    my $self = shift;
+    warn "!  Write needs removal\n";
+	if ($self->DATAPATH() && $self->DATAPATH()->attached()) { 
+	    if ($self->HWTYPE() =~ /GENESIS/) {
+	        # XXX temporary
+	        my $selector = $self->DATAPATH();
+            my $rval = $selector->write(@_);
+            return $rval;
+	    }
+	}
+	else {
+		warn "! attempted Write when not Attached\n";
+		return "";
+	}
 }
 
+sub command { 
+    my $self = shift;
+    if ($self->DATAPATH() && $self->DATAPATH()->attached()) { 
+        if ($self->COMPILER) { 
+            my $code = $self->COMPILER()->compile(@_);
+            return $self->DATAPATH()->write($code) if $code;
+        }
+        else { 
+            warn "! No command compiler for ".$self->connection. "\n";
+        }
+    }
+	else {
+		warn "! attempted 'command' when not Attached\n";
+		return "";
+	}
+}
 
-=head2 server
+# sub command1 is for single(firmware) commands
+sub command1 { 
+    my $self = shift;
+    if ($self->DATAPATH() && $self->DATAPATH()->attached()) { 
+        if ($self->COMPILER) { 
+            my $code = $self->COMPILER()->compile1(@_);
+            return $self->DATAPATH()->write($code);
+        }
+        else { 
+            warn "! No command compiler for ".$self->connection. "\n";
+        }
+    }
+	else {
+		warn "! attempted 'command' when not Attached\n";
+		return "";
+	}
+}
 
-Start network server.  The server provides network access to the
-locally-attached robotics.
+=head2 park
+
+Park robotics motor arm (perhaps running calibration), based on the motor name (see 'move') 
+
+For parking roma-named arms, use the arguments:
+=item (optional) grip - gripper (hand) action for parking: 
+	"n" or false means unchanged grip (default), "p" for park the grip
+
+For parking liha-named arms, use the arguments:
+
+
+For parking 
+Return status string.
+May take time to complete.
 
 =cut
 
-sub server {
-    my($self) = shift;
-    use IO::Socket;
-    use Net::hostent;
+sub park {
+	my $self  = shift;
+	my $motor = shift || "roma0";
+	my $grip  = shift || "0";
+	my $reply;
+	if ($motor =~ m/liha(\d*)/i) {
+		$self->command("LIHA_PARK", lihanum => $1) if $1;
+		$self->command("LIHA_PARK", lihanum => "0") if !$1;
+	}
+	elsif ($motor =~ m/roma(\d*)/i) {
+		my $motornum = 0;
+		# XXX: Check if \d is active arm, if not use SET_ROMANO to make active
+		if ($1 > 0) { 
+			$motornum = $1;
+		}
+		$self->command("SET_ROMANO", romanum => $motornum);
+		$reply = $self->Read();
+		if ( $grip =~ m/p/i ) {
+			$grip = "1";
+		}
+		else {
+			$grip = "0";
+		}
+		$self->command("ROMA_PARK", grippos => $grip);
+	}
+	elsif ($motor =~ m/lihi(\d*)/i) {
+		# "arm number always zero"
+		my $arm = "0";
+		$self->command("LIHA_PARK", lihanum => $arm);
+	}
+	elsif ($motor =~ m/pnp(\d*)/i) {
 
-    my $password = shift || die "must supply password with server()\n";
-    my $port = shift || 8088;
-
-    my $server = IO::Socket::INET->new( Proto     => 'tcp',
-                                  LocalPort => $port,
-                                  Listen    => SOMAXCONN,
-                                  Reuse     => 1);
-    die "cant open network on port $port" unless $server;
-
-    my $client;
-    my $hostinfo;
-    my $cdata;
-    print STDERR "Robotics::Tecan network server is ready on port $port.\n";
-    while ($client = $server->accept()) {
-        $client->autoflush(1);
-        print $client "Welcome to $0\n";
-        $hostinfo = gethostbyaddr($client->peeraddr);
-        printf STDERR "\tConnect from %s on port $port\n",
-            $hostinfo ? $hostinfo->name : $client->peerhost;
-
-        # Cheap authentication
-        print $client "login:\n";
-        while ($cdata = <$client>) {
-            $cdata =~ s/\n\r\t\s//g;
-            last if ($cdata =~ /^$password\b/);
-            print $client "login:\n";
-            print STDOUT "\t\t$cdata\n";
-        }
-        print $client "Authentication OK\n";
-        printf STDERR "\tAuthenticated %s on port $port\n",
-            $hostinfo ? $hostinfo->name : $client->peerhost;
-
-        # Run commands
-        my $result;
-        while (<$client>) {
-            next unless /\S/;       # blank line
-            last if /end/oi;
-            s/[\r\n\t\0]//g;
-            s/^[\s\>]*//g;
-            print STDERR "\t\t$_\n";
-            $self->Write($_);
-            $result = $self->Read();
-            print STDERR "\t\t\t$result\n";
-            print $client "\n$_\n<$result" . "\n";
-        }
-        printf STDERR "\tDisconnect %s\n",
-            $hostinfo ? $hostinfo->name : $client->peerhost;
-        close $client;
-        print STDERR "Robotics::Tecan network server is ready on port $port.\n";
-    }
-    close $server;
-
-	return 1;
+		# XXX: allow user to set handpos (gripper)
+		my $handpos = 0;
+		$self->command("PNP_PARK", gripcommand => $handpos);
+	}
+	return $reply = $self->Read();
 }
+
+=head2 grip
+
+Grip robotics motor gripper hand, based on the motor name (see 'move').
+
+For roma-named motors, the gripper hand motor name is the same as the arm motor name.
+
+For roma-named motors, use the arguments:
+=item (optional) direction - "o" for hand open, or "c" for hand closed (default)
+=item (optional) distance - numeric, 60..140 mm (default: 110)
+=item (optional) speed - numeric, 0.1 .. 150 mm/s (default: 100)
+=item (optional) force - numeric when moving hand closed, 1 .. 249 (default: 40)
+
+For pnp-named motors, use the arguments:
+=item (optional) direction - "o" for hand open/release tube, or "c" for hand closed/grip (default)
+=item (optional) distance - numeric, 7..28 mm (default: 16)
+=item (optional) speed - numeric (unused)
+=item (optional) force - numeric (unused)
+
+
+Return status string.
+May take time to complete.
+
+=cut
+
+sub grip {
+	my $self     = shift;
+	my $motor    = shift || "roma0";
+	my $dir      = shift || "c";
+	my $distance = shift;
+	my $speed    = shift;
+	my $force    = shift;
+
+	# ROMA_GRIP  [distance;speed;force;strategy]
+	#  Example: ROMA_GRIP;80;50;120;0
+	# PNP_GRIP  [distance;speed;force;strategy]
+	#  Example: PNP_GRIP;16;0;0;0
+	# TEMO_PICKUP_PLATE [grid;site;plate type]
+	# TEMO_DROP_PLATE [grid;site;plate type]
+	# CAROUSEL_DIRECT_MOVEMENTS [device;action;tower;command]
+
+	# C=close/gripped=1, O=open/release=0
+	if ( $dir =~ m/c/i ) { $dir = "1"; }
+	else { $dir = "0"; }
+
+	my $reply;
+	if ( $motor =~ m/roma(\d*)/i ) {
+		if (!$distance) { $distance = "110" };
+		if (!$speed) { $speed = "50" };
+		if (!$force) { $force = "40" };
+		# XXX: Check if \d is active arm, if not use SET_ROMANO to make active
+		$self->command("ROMA_GRIP", 
+            distance => $distance, speed => $speed,
+            force => $force, gripcommand => $dir);
+	}
+	elsif ( $motor =~ m/pnp(\d*)/i ) {
+		# "speed, force: unused"
+		if (!$distance) { $distance = "16" };
+		$self->command("PNP_GRIP", 
+            distance => $distance, speed => $speed, 
+            force => $force, strategy => $dir);
+	}
+	return $reply = $self->Read();
+}
+
+
+
+=head2 move
+
+Move robotics motor arm, based on the case-insensitive motor name and given coordinates.  
+
+Note: The Gemini application asks the user for arm numbers 1,2,3... in the GUI application, 
+whereas the robotics command language (and this Perl module) use arm numbers 0,1,2,..
+The motors are named as follows:
+
+
+=item "roma0" .. "romaN" - access RoMa arm number 0 .. N.  Automatically switches to make the arm
+the current arm.  Alternatively, "romaL" or "romal" can be used for the left arm (same as "roma0") 
+and "romaR" or "romar" can be use for the right arm (same as "roma1"). 
+
+=item "pnp0" .. "pnpN" - access PnP arm number 0 .. N.   Alternatively, "pnpL" or "pnpl" can be used 
+for the left arm (same as "pnp0") 
+and "pnpR" or "pnpr" can be use for the right arm (same as "pnp1").  Note: The Gemini application 
+asks the user for arm numbers 1,2,3... in the GUI application, whereas the robotics command language
+(and this Perl module) use arm numbers 0,1,2,..
+
+=item "temo0" .. "temoN" - access TeMo arm number 0 .. N.
+
+=item "liha0" .. "lihaN" - access LiHA arm number 0 .. N.  (Note: no commands exist)
+ 
+For moving roma-named motors with Gemini-defined vectors, use the arguments:
+
+=item vector - name of the movement vector (programmed previously in Gemini)
+
+=item (optional) direction - "s" = travel to vector start, "e" = travel to vector end 
+(default: go to vector end)
+
+=item (optional) site - numeric, (default: 0)
+
+=item (optional) relative x,y,z - three arguments indicating relative positioning (default: 0)
+
+=item (optional) linear speed (default: not set)
+
+=item (optional) angular speed (default: not set)
+
+For moving roma-named motors with Robotics::Tecan points (this module's custom software),
+use the arguments:
+
+=item point - name of the movement point (programmed previously)
+
+For moving pnp-named motors, use the arguments:
+
+=item TBD
+
+For moving temo-named motors, use the arguments:
+
+=item TBD
+
+For moving carousel-named motors, use the arguments:
+
+=item TBD
+
+Return status string.
+May take time to complete.
+
+=cut
+
+sub move {
+	my $self         = shift;
+	my $motor        = shift || "roma0";
+	my $name         = shift || "HOME1";
+	my $dir          = shift || "0";
+	my $site         = shift || "0";
+	my $xdelta       = shift || "0";
+	my $ydelta       = shift || "0";
+	my $zdelta       = shift || "0";
+	my $speedlinear  = shift || 0;
+	my $speedangular = shift || 0;
+
+# ROMA_MOVE  [vector;site;xOffset;yOffset;zOffset;direction;XYZSpeed;rotatorSpeed]
+#  Example: ROMA_MOVE;Stacker1;0;0;0;0;0
+# PNP_MOVE [vector;site;position;xOffset;yOffset;zOffset;direction;XYZSpeed]
+# TEMO_MOVE [site;stacker flag]
+#	Example: TEMO_MOVE;1
+# CAROUSEL_DIRECT_MOVEMENTS [device;action;tower;command]
+
+	# S=vector points to start=1, E=vector points to end=0
+    # ""0 = from safe to end position, 1 = from end to safe position""
+	if    ( $dir =~ m/s/i ) { $dir = "1"; }
+	#elsif ( $dir =~ m/e/i ) { $dir = "0"; }
+	else { $dir = "0"; }
+	
+	my $reply;
+	if ( $motor =~ m/roma(\d*)/i ) {
+        # First check for Robotics::Tecan point
+        if (grep {$_ eq $name} keys %{$self->{POINTS}->{$motor}}) { 
+            no warnings 'uninitialized';
+            my $motornum = $1 + 1; # XXX motornum needs verification with docs
+
+            # Verify motors are OK to move
+            $self->{COMPILER}->CheckMotorOK($motor, $motornum) || return "";
+            
+            # Write movement command
+            my ($x, $y, $z, $r, $g, $speed) = split(",", $self->{POINTS}->{$motor}->{$name});
+            if (!$speed) { $speed = "0"; }
+            my $cmd = "SAA1,$x,$y,$z,$r,$g,$speed";
+            $self->command1("R". $motornum. $cmd);
+            $reply = $self->Read();
+            if ($reply =~ /^0/) { 
+                # Program point is OK
+                $self->command1("R". $motornum. "AAA");
+                $reply = $self->Read();
+            }
+
+            # Verify move is correct
+            $self->{COMPILER}->CheckMotorOK($motor, $motornum) || return "";
+            return $reply;
+        }
+        else { 
+            # Use ROMA_MOVE
+            my $motornum = 0;
+            # XXX: Check if \d is active arm, if not use SET_ROMANO to make active
+            if ($1 > 0) { 
+                $motornum = $1;
+                
+            }
+            $self->command("SET_ROMANO", romanum => $motornum);
+            $reply = $self->Read();
+            
+            my $cmd = join( ";", $name, $site, $xdelta, $ydelta, $zdelta, $dir );
+            if ( $speedlinear > 0 ) { $cmd .= ";$speedlinear"; }
+            if ( $speedangular > 0 ) {
+                if ( $speedlinear < 1 ) { $cmd .= ";400"; }
+                $cmd .= ";$speedangular";
+            }
+            $self->command("ROMA_MOVE", 
+                    vectorname => $name, site => $site,
+                    deltax => $xdelta, deltay => $ydelta, deltaz => $zdelta,
+                    direction => $dir, 
+                    xyzspeed => $speedlinear, 
+                    rotatorspeed => $speedangular);
+                                
+            return $reply = $self->Read();
+        }
+	}
+	elsif ( $motor =~ m/pnp(\d*)/i ) {
+
+		# XXX: TBD
+	}
+}
+
+
+=head2 move_path
+
+Move robotics motor arm along predefined path, based on the case-insensitive motor name and given coordinates.  See move. 
+
+Arguments:
+
+=item Name of motor.
+
+=item Array of Robotics::Tecan custom points (up to 100 for Genesis)
+
+Return status string.
+May take time to complete.
+
+=cut
+
+sub move_path {
+	my $self         = shift;
+	my $motor        = shift || "roma0";
+	my @points       = @_;
+	my $name;
+	my $reply;
+	if ( $motor =~ m/roma(\d*)/i ) {
+        my $motornum = $1 + 1; # XXX motornum needs verification with docs
+        # Verify motors are OK to move
+        $self->{COMPILER}->CheckMotorOK($motor, $motornum) || return "";
+        my $p = 1;
+        foreach $name (@points) { 
+            # First check for Robotics::Tecan point
+            if (grep {$_ eq $name} keys %{$self->{POINTS}->{$motor}}) { 
+                no warnings 'uninitialized';
+                my ($x, $y, $z, $r, $g, $speed) = split(",", $self->{POINTS}->{$motor}->{$name});
+                if (!$speed) { $speed = "0"; }
+                my $cmd = "SAA$p,$x,$y,$z,$r,$g,$speed";
+                $self->command1("R". $motornum. $cmd);
+                $reply = $self->Read();
+                if (!($reply =~ /^0/)) { 
+                    warn "Error programming point '$name'\n";
+                    return "";
+                }
+                $p++;
+            }
+            last if $p > 100;
+    	}
+	    if ($p > 1) {
+            # Program point is OK - Start Move
+            $self->command1("R". $motornum. "AAA");
+            $reply = $self->Read();
+                
+            # Verify move is correct
+            $self->{COMPILER}->CheckMotorOK($motor, $motornum) || return "";
+            return $reply;
+	    }
+	}
+	
+}
+
+sub WriteRaw {
+# This function provided for debug only - do not use
+    my $self = shift;
+    warn "!  WriteRaw needs removal\n";
+    my $data;
+	if ($self->{ATTACHED}) { 
+        $data =~ s/[\r\n\t\0]//go;
+        $data =~ s/^\s*//go;
+        $data =~ s/\s*$//go;
+        if ($self->{FID}) { 
+            $self->{FID}->Write($data . "\0");
+        }
+        elsif ($self->{SERVER}) { 
+            my $socket = $self->{SOCKET};
+            print $socket ">$data\n";
+            print STDERR ">$data\n" if $Debug;
+        }
+	}
+	else {
+		warn "! attempted Write when not Attached\n";
+		return "";
+	}
+     warn "!! delete this function";
+          
+}
+=head2 Read
+
+Low level function to read commands from hardware.
+
+=cut
+sub Read {
+    my $self = shift;
+    # Reading while unattached may hang depending on device
+    #  so always check attached()
+	if ($self->DATAPATH() && $self->DATAPATH()->attached()) { 
+        my $data;
+        my $selector = $self->DATAPATH();
+        $data = $selector->read();
+	}
+	else {
+		warn "! attempted Read when not Attached\n";
+		return "";
+	}
+}
+
 
 =head2 detach
 
@@ -536,14 +595,11 @@ End communication to the hardware.
 
 sub detach {
     my($self) = shift;
-    $self->{ATTACHED} = 0;
-    if ($self->{FID}) { 
-        $self->{FID}->Close();
+    if ($self->DATAPATH()) { 
+        $self->DATAPATH()->close();
+        $self->DATAPATH( undef );
     }
-    elsif ($self->{SERVER}) { 
-        $self->{SOCKET}->close();
-    }
-	return;
+    return;
 }
 
 =head2 status_hardware
@@ -556,8 +612,7 @@ Return hardware type string (should always be "GENESIS").
 sub status_hardware {
     my $self = shift;
 	my $reply;
-	$self->Write("GET_RSP");
-	$reply = $self->Read();
+	$reply = $self->command("GET_RSP");
 	if (!($reply =~ m/genesis/i)) {
 		warn "Expected response GENESIS from hardware"
 	}
@@ -580,7 +635,7 @@ Returns:
 
 sub configure {
     my $self = shift;
-    my $infile = shift || return 1;
+    my $infile = shift || croak "cant open configuration file";
 	
 	open(IN, $infile) || return 1;
 	my $s = do { local $/ = <IN> };
@@ -629,8 +684,8 @@ sub initialize {
     my $self = shift;
 	my $reply;
 	
-	$self->Write("#".$self->{HWNAME}."PIS");
-	return $reply = $self->Read();
+	#$self->command("#".$self->{HWNAME}."PIS");
+	#return $reply = $self->Read();
 }
 
 
@@ -645,8 +700,7 @@ May take time to complete.
 sub initialize_full {
     my $self = shift;
 	my $reply;
-	$self->Write("INIT_RSP");
-	return $reply = $self->Read();
+	return $self->command("INIT_RSP");
 }
 
 
@@ -660,109 +714,9 @@ Robotics::Tecan internal hook for simulation and test.  Not normally used.
 
 sub simulate_enable {
 	# Modify internals to do simulation instead of real communication
-	$Robotics::Tecan::PIPENAME = '/tmp/gemini';
+	$Robotics::Tecan::Gemini::PIPENAME = '/tmp/gemini';
 }
 
-=head2 Write
-
-Low level function to write commands to hardware.
-
-=cut
-
-sub Write {
-    my $self = shift;
-	if ($self->{ATTACHED}) { 
-        my $data = shift;
-        $data =~ s/[\r\n\t\0]//go;
-        $data =~ s/^\s*//go;
-        $data =~ s/\s*$//go;
-        if ($self->{FID}) { 
-            $self->{FID}->Write($data . "\0");
-        }
-        elsif ($self->{SERVER}) { 
-            my $socket = $self->{SOCKET};
-            print $socket ">$data\n";
-            print STDERR ">$data\n" if $Debug;
-        }
-        else {
-            warn "not reached";
-        }
-	}
-	else {
-		warn "! attempted Write when not Attached\n";
-		return "";
-	}
-}
-
-
-=head2 WriteFirmware
-
-Low level function to write commands to hardware's firmware.
-
-=item WARNING - Some firmware commands are dangerous to the equipment - 
-No error checking is performed by this function - user beware.
-
-Argument:  string command.
-
-=cut
-
-sub WriteFirmware {
-    my $self = shift;
-    return $self->Write("COMMAND;" . shift);
-}
-
-=head2 Read
-
-Low level function to read commands from hardware.
-
-=cut
-sub Read {
-    my $self = shift;
-	if ($self->{ATTACHED}) { 
-        my $data;
-        if ($self->{FID}) {
-            my $byte;
-            my $count;
-            do { $byte = $self->{FID}->Read(); $data .= $byte if $byte; $count++; } 
-                while ($byte && !($byte =~ m/\0/) && $count < 100);
-            while (0) {  # XXX
-                $byte = $self->{FID}->Read();
-                last if $byte && $byte eq '\0';
-                $count++;
-                last if $count > 500;
-                # sometimes undef is returned for $byte (blame Win32::Pipe)
-                if ($byte) { $data .= $byte; }
-            }
-        }
-        elsif ($self->{SERVER}) {
-            my $socket = $self->{SOCKET};
-            # OS/X perl 5.8.8 returns $data=undef if socket closed by server
-            # cygwin-perl 5.10 returns $data="" if socket closed by server
-            while ($data = <$socket>) { 
-                last if !$data;
-                last if $data =~ s/^<//;
-            }
-        }
-        else { 
-            die "notreached";
-        }
-        # $data may be undef on socket error (OS/X perl 5.8.8)
-        if ($data) { 
-            print STDERR "<$data" if $Debug;
-            $data =~ s/[\r\n\t\0]//go;
-            $data =~ s/^\s*//go;
-            $data =~ s/\s*$//go;
-            return $data;
-        }
-        else {
-            return "";
-        }
-	}
-	else {
-		warn "! attempted Read when not Attached\n";
-		return "";
-	}
-}
 
 
 =head1 REFERENCE ON NAMED PIPES
@@ -796,7 +750,7 @@ Jonathan Cline, C<< <jcline at ieee.org> >>
 =head1 BUGS
 
 Please report any bugs or feature requests to C<bug-bio-robotics at rt.cpan.org>, or through
-the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Bio-Robotics>.  I will be notified, and then you'll
+the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Robotics>.  I will be notified, and then you'll
 automatically be notified of progress on your bug as I make changes.
 
 
@@ -815,19 +769,19 @@ You can also look for information at:
 
 =item * RT: CPAN's request tracker
 
-L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Bio-Robotics>
+L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Robotics>
 
 =item * AnnoCPAN: Annotated CPAN documentation
 
-L<http://annocpan.org/dist/Bio-Robotics>
+L<http://annocpan.org/dist/Robotics>
 
 =item * CPAN Ratings
 
-L<http://cpanratings.perl.org/d/Bio-Robotics>
+L<http://cpanratings.perl.org/d/Robotics>
 
 =item * Search CPAN
 
-L<http://search.cpan.org/dist/Bio-Robotics/>
+L<http://search.cpan.org/dist/Robotics/>
 
 =back
 
@@ -848,6 +802,7 @@ See http://dev.perl.org/licenses/ for more information.
 
 
 =cut
+
 
 1; # End of Robotics::Tecan
 

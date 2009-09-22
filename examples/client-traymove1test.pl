@@ -13,10 +13,24 @@ use Robotics;
 use Robotics::Tecan;
 
 print "Testing Robotics $Robotics::VERSION, Perl $], $^X\n";
-
-my $hw = Robotics::Tecan->new(
-    'server' => 'heavybio.dyndns.org:8088',
-    'password' => $ENV{'TECANPASSWORD'});
+my $obj = Robotics->new();
+print "Hardware: ". $obj->printDevices();
+my $gemini;
+my $hw;
+if ($gemini = $obj->findDevice(product => "Gemini")) { 
+    print "Found local Gemini $gemini\n";
+    my $genesis = $obj->findDevice(product => "Genesis");
+    $hw = Robotics::Tecan->new(
+        connection => $gemini);
+}
+else {
+    print "No Gemini found, opening network client\n";
+    $hw = Robotics::Tecan->new(
+        connection => 'network,Robotics::Tecan::Genesis,genesis0',
+        token => 'M1',
+        serveraddr => 'heavybio.dyndns.org:8088',
+        password => $ENV{'TECANPASSWORD'});
+}
 
 if (!$hw) { 
     die "fail to connect\n";
@@ -42,7 +56,7 @@ if (!($_ =~ m/yes/i)) {
 exit 0;
 
 sub checkok {
-    my $s = @_[0];
+    my $s = $_[0];
     my $want = "0";
     if (!grep(/$want/, $s)) { 
         die "Robot err $s, wanted $want\n";
@@ -52,7 +66,7 @@ sub checkok {
     }
 }
 sub checkerr7 {
-    my $s = @_[0];
+    my $s = $_[0];
     my $want = "7";
     if (!grep(/$want/, $s)) { 
         die "Robot err $s, wanted $want\n";
@@ -65,13 +79,14 @@ sub checkerr7 {
 
 sub Main {
 
+    # Load worktable
+    $hw->configure("client-traymove1test.yaml");    
+    
     $hw->status();
     $_ = $hw->initialize();
-    exit -3 if !/IDLE/i;
+    #exit -3 if !/IDLE/i;
     $hw->status();
 
-    # Load worktable
-    $hw->configure("client-pipette4test.yaml");    
 
     $hw->park("liha");
     $hw->park("roma0");

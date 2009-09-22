@@ -3,7 +3,6 @@
 
 use lib '../lib';
 use Robotics;
-use Robotics::Tecan;
 
 print "Testing Robotics $Robotics::VERSION, Perl $], $^X\n";
 my $obj = Robotics->new();
@@ -28,11 +27,17 @@ else {
 if (!$hw) { 
     die "fail to connect\n";
 }
+print "Managing hardware\n";
+my $manager = Robotics->new(
+        device => $hw,
+        alias => "worker1");
 
-$hw->attach();
-$_ = $hw->status();
-print;
-exit -2 if !/IDLE/i;
+print "Attaching to hardware\n";
+print $hw->attach();
+print $hw->status();
+print $hw->status();
+print $hw->initialize();
+print $hw->status();
 
 warn "
 #
@@ -46,55 +51,10 @@ if (!($_ =~ m/yes/i)) {
     exit -4;
 }
 
-&Main;
-exit 0;
+$hw->command("ROMA_PARK", grippos => "0"); print "\t".$hw->Read()."\n\n";
+$hw->command("ROMA_PARK", grippos => "1"); print "\t".$hw->Read()."\n\n";
+$hw->command("ROMA_PARK", grippos => "2"); print "\t".$hw->Read()."\n\n";
+$hw->park();
+$hw->detach();
 
-sub checkok {
-    my $s = @_[0];
-    my $want = "0";
-    if (!grep(/$want/, $s)) { 
-        die "Robot err $s, wanted $want\n";
-    }
-    else {
-        warn "Got: $s\n";
-    }
-}
-sub checkerr7 {
-    my $s = @_[0];
-    my $want = "7";
-    if (!grep(/$want/, $s)) { 
-        die "Robot err $s, wanted $want\n";
-    }
-    else {
-        warn "Got: $s\n";
-    }
-
-}
-
-sub Main {
-
-    $hw->status();
-    $_ = $hw->initialize();
-    #exit -3 if !/IDLE/i;
-    $_ = $hw->status();
-    exit -3 if !/IDLE/i;
-
-    $hw->park("roma0");
-    checkerr7 $hw->move("roma0", "nonesuch-expect-error7");
-    checkok $hw->grip("roma0", 'o', 120);
-    checkok $hw->move("roma0", "jc-traypickup", 'e', 1);
-    checkok $hw->grip("roma0");
-    checkok $hw->move("roma0", "jc-traypickup", 's', 1);
-    checkok $hw->park("roma0");
-
-    checkok $hw->park("liha");
-
-
-
-    $hw->detach();
-
-    1;
-}
-
-__END__
-
+1;

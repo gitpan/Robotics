@@ -1,14 +1,16 @@
 #!/usr/bin/perl
 # vim:set nocompatible expandtab tabstop=4 shiftwidth=4 ai:
 
+use lib '../lib';
 use Robotics;
 use Robotics::Tecan;
+
 
 print "Testing Robotics $Robotics::VERSION, Perl $], $^X\n";
 
 my $hw = Robotics::Tecan->new(
     'server' => 'heavybio.dyndns.org:8088',
-    'password' => 'pcrisfunforme');
+    'password' => $ENV{'TECANPASSWORD'});
 
 if (!$hw) { 
     die "fail to connect\n";
@@ -37,7 +39,7 @@ print "Enter tecan commands!\n\n";
 while ($_ = <STDIN>) {
     s/[\n\r\t]*//g;
     if (!$_) { last; }
-    $hw->Write($_);
+    $hw->Write(split(';'));
     print "\t".$hw->Read()."\n\n";
 }
 

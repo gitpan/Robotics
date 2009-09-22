@@ -12,9 +12,24 @@ use Robotics::Tecan;
 
 print "Testing Robotics $Robotics::VERSION, Perl $], $^X\n";
 
-my $hw = Robotics::Tecan->new(
-    'server' => 'heavybio.dyndns.org:8088',
-    'password' => $ENV{'TECANPASSWORD'});
+my $obj = Robotics->new();
+print "Hardware: ". $obj->printDevices();
+my $gemini;
+my $hw;
+if ($gemini = $obj->findDevice(product => "Gemini")) { 
+    print "Found local Gemini $gemini\n";
+    my $genesis = $obj->findDevice(product => "Genesis");
+    $hw = Robotics::Tecan->new(
+        connection => $gemini);
+}
+else {
+    print "No Gemini found, opening network client\n";
+    $hw = Robotics::Tecan->new(
+        connection => 'network,Robotics::Tecan::Genesis,genesis0',
+        token => 'M1',
+        serveraddr => 'heavybio.dyndns.org:8088',
+        password => $ENV{'TECANPASSWORD'});
+}
 
 if (!$hw) { 
     die "fail to connect\n";
@@ -103,8 +118,6 @@ sub Main {
     checkok $hw->park("roma0");
 
     checkok $hw->park("liha");
-
-    $hw->_dumpLoc();
 
     $hw->detach();
 

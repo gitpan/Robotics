@@ -1,15 +1,17 @@
 
-package Robotics::Tecan::Genesis;
+package Robotics::Tecan::Genesis::Session;
 
 # vim:set nocompatible expandtab tabstop=4 shiftwidth=4 ai:
 
 #
 # Tecan Genesis
-# config commands
+# Session layer: configuration handling of the 'attached' hardware
 #
 
 use warnings;
 use strict;
+use Moose::Role;
+#extends 'Robotics::Tecan::Genesis';
 
 use YAML::XS;
 
@@ -37,8 +39,6 @@ sub configure {
     return 0;
 }
 
-
-1;    # End of Robotics::Tecan::Genesis::config
+1;    # End of Robotics::Tecan::Genesis::Session
 
 __END__
-
