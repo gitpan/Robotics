@@ -10,7 +10,16 @@ use warnings;
 use strict;
 use Moose::Role;
 use Carp;
+
+my $Debug = 1;
+
 #extends 'Robotics::Tecan::Genesis';
+
+
+=head1 NAME
+
+Robotics::Tecan::Genesis::Roma - (Internal module)
+Handler for low level robotic movement arm hardware
 
 =head2 CheckMotorOK
 
@@ -28,21 +37,30 @@ sub CheckMotorOK {
 
     my $reply;
     my $code;
-    $code = $self->compile1("R". $motornum. "REE");
+    my $token;
+
+    $code = $self->compile1("REE",
+        motorname => $motorname);
+    if (!$code) { 
+        carp __PACKAGE__. " bad motorname '$motorname'?";
+        return 0;
+    }
     $self->DATAPATH()->write($code);
     $reply = $self->DATAPATH()->read();
-    if ($reply =~ /^[^0]/) { 
+    my $replytxt = $self->decompile1_reply($reply);
+    if ($replytxt =~ /^E/) { 
         # command error
-        carp "Robotics cmd error: $reply\n";
+        carp __PACKAGE__." Robotics cmd error: $replytxt\n";
         return 0;       
     }
     # set reply to only result string, strip '0;'
     $reply = substr($reply, 2);
-    if ($reply =~ /[^@]/) { 
-        warn "Robotics error found: $reply\n"; 
+    if (!($reply =~ m/^@@@@/)) {
+        # TODO: Add gripper check; for now, gripper status is ignored 
+        warn __PACKAGE__." Robotics error found: $reply\n"; 
         return 0;
     }
-
+    warn __PACKAGE__. " $motorname$motornum status: $reply\n" if $Debug;
     return $reply;
 }
 

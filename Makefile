@@ -58,11 +58,11 @@ DIRFILESEP = /
 DFSEP = $(DIRFILESEP)
 NAME = Robotics
 NAME_SYM = Robotics
-VERSION = 0.21
+VERSION = 0.23
 VERSION_MACRO = VERSION
-VERSION_SYM = 0_21
+VERSION_SYM = 0_23
 DEFINE_VERSION = -D$(VERSION_MACRO)=\"$(VERSION)\"
-XS_VERSION = 0.21
+XS_VERSION = 0.23
 XS_VERSION_MACRO = XS_VERSION
 XS_DEFINE_VERSION = -D$(XS_VERSION_MACRO)=\"$(XS_VERSION)\"
 INST_ARCHLIB = blib/arch
@@ -162,11 +162,20 @@ O_FILES  =
 H_FILES  = 
 MAN1PODS = 
 MAN3PODS = lib/Robotics.pm \
+	lib/Robotics/Fialab.pm \
+	lib/Robotics/Fialab/Microsia.pm \
+	lib/Robotics/Fialab/Microsia/Compiler.pm \
+	lib/Robotics/Fialab/Serial.pm \
+	lib/Robotics/Manual.pod \
 	lib/Robotics/Tecan.pm \
+	lib/Robotics/Tecan/Client.pm \
+	lib/Robotics/Tecan/Gemini.pm \
 	lib/Robotics/Tecan/Genesis.pm \
-	lib/Robotics/Tecan/Genesis/config.pm \
-	lib/Robotics/Tecan/Genesis/liquid.pm \
-	lib/Robotics/Tecan/Genesis/motor.pm
+	lib/Robotics/Tecan/Genesis/Compiler.pm \
+	lib/Robotics/Tecan/Genesis/Liha.pm \
+	lib/Robotics/Tecan/Genesis/Roma.pm \
+	lib/Robotics/Tecan/Genesis/Session.pm \
+	lib/Robotics/Tecan/Server.pm
 
 # Where is the Config information that we are using/depend on
 CONFIGDEP = $(PERL_ARCHLIB)$(DFSEP)Config.pm $(PERL_INC)$(DFSEP)config.h
@@ -189,24 +198,54 @@ PERL_ARCHIVE_AFTER =
 
 
 TO_INST_PM = lib/Robotics.pm \
+	lib/Robotics/.DS_Store \
+	lib/Robotics/Fialab.pm \
+	lib/Robotics/Fialab/Microsia.pm \
+	lib/Robotics/Fialab/Microsia/Compiler.pm \
+	lib/Robotics/Fialab/Serial.pm \
+	lib/Robotics/Manual.pod \
 	lib/Robotics/Tecan.pm \
+	lib/Robotics/Tecan/Client.pm \
+	lib/Robotics/Tecan/Gemini.pm \
 	lib/Robotics/Tecan/Genesis.pm \
-	lib/Robotics/Tecan/Genesis/config.pm \
-	lib/Robotics/Tecan/Genesis/liquid.pm \
-	lib/Robotics/Tecan/Genesis/motor.pm
+	lib/Robotics/Tecan/Genesis/Compiler.pm \
+	lib/Robotics/Tecan/Genesis/Liha.pm \
+	lib/Robotics/Tecan/Genesis/Roma.pm \
+	lib/Robotics/Tecan/Genesis/Session.pm \
+	lib/Robotics/Tecan/Server.pm
 
-PM_TO_BLIB = lib/Robotics/Tecan/Genesis/config.pm \
-	blib/lib/Robotics/Tecan/Genesis/config.pm \
+PM_TO_BLIB = lib/Robotics/Tecan/Server.pm \
+	blib/lib/Robotics/Tecan/Server.pm \
+	lib/Robotics/Fialab/Microsia.pm \
+	blib/lib/Robotics/Fialab/Microsia.pm \
+	lib/Robotics/Tecan/Genesis/Compiler.pm \
+	blib/lib/Robotics/Tecan/Genesis/Compiler.pm \
+	lib/Robotics/Tecan/Genesis/Liha.pm \
+	blib/lib/Robotics/Tecan/Genesis/Liha.pm \
+	lib/Robotics/Tecan/Genesis/Session.pm \
+	blib/lib/Robotics/Tecan/Genesis/Session.pm \
 	lib/Robotics/Tecan.pm \
 	blib/lib/Robotics/Tecan.pm \
-	lib/Robotics/Tecan/Genesis/motor.pm \
-	blib/lib/Robotics/Tecan/Genesis/motor.pm \
-	lib/Robotics/Tecan/Genesis.pm \
-	blib/lib/Robotics/Tecan/Genesis.pm \
 	lib/Robotics.pm \
 	blib/lib/Robotics.pm \
-	lib/Robotics/Tecan/Genesis/liquid.pm \
-	blib/lib/Robotics/Tecan/Genesis/liquid.pm
+	lib/Robotics/Tecan/Gemini.pm \
+	blib/lib/Robotics/Tecan/Gemini.pm \
+	lib/Robotics/Tecan/Client.pm \
+	blib/lib/Robotics/Tecan/Client.pm \
+	lib/Robotics/Fialab/Serial.pm \
+	blib/lib/Robotics/Fialab/Serial.pm \
+	lib/Robotics/.DS_Store \
+	blib/lib/Robotics/.DS_Store \
+	lib/Robotics/Fialab.pm \
+	blib/lib/Robotics/Fialab.pm \
+	lib/Robotics/Fialab/Microsia/Compiler.pm \
+	blib/lib/Robotics/Fialab/Microsia/Compiler.pm \
+	lib/Robotics/Tecan/Genesis/Roma.pm \
+	blib/lib/Robotics/Tecan/Genesis/Roma.pm \
+	lib/Robotics/Manual.pod \
+	blib/lib/Robotics/Manual.pod \
+	lib/Robotics/Tecan/Genesis.pm \
+	blib/lib/Robotics/Tecan/Genesis.pm
 
 
 # --- MakeMaker platform_constants section:
@@ -273,7 +312,7 @@ RCS_LABEL = rcs -Nv$(VERSION_SYM): -q
 DIST_CP = best
 DIST_DEFAULT = tardist
 DISTNAME = Robotics
-DISTVNAME = Robotics-0.21
+DISTVNAME = Robotics-0.23
 
 
 # --- MakeMaker macro section:
@@ -426,19 +465,37 @@ POD2MAN = $(POD2MAN_EXE)
 
 
 manifypods : pure_all  \
-	lib/Robotics/Tecan/Genesis/config.pm \
+	lib/Robotics/Fialab/Serial.pm \
+	lib/Robotics/Tecan/Server.pm \
+	lib/Robotics/Fialab/Microsia.pm \
+	lib/Robotics/Tecan/Genesis/Compiler.pm \
+	lib/Robotics/Fialab.pm \
+	lib/Robotics/Tecan/Genesis/Liha.pm \
 	lib/Robotics/Tecan.pm \
-	lib/Robotics/Tecan/Genesis/motor.pm \
+	lib/Robotics/Tecan/Genesis/Session.pm \
+	lib/Robotics/Tecan/Genesis/Roma.pm \
+	lib/Robotics/Fialab/Microsia/Compiler.pm \
+	lib/Robotics/Manual.pod \
 	lib/Robotics/Tecan/Genesis.pm \
 	lib/Robotics.pm \
-	lib/Robotics/Tecan/Genesis/liquid.pm
+	lib/Robotics/Tecan/Gemini.pm \
+	lib/Robotics/Tecan/Client.pm
 	$(NOECHO) $(POD2MAN) --section=3 --perm_rw=$(PERM_RW) \
-	  lib/Robotics/Tecan/Genesis/config.pm $(INST_MAN3DIR)/Robotics::Tecan::Genesis::config.$(MAN3EXT) \
+	  lib/Robotics/Fialab/Serial.pm $(INST_MAN3DIR)/Robotics::Fialab::Serial.$(MAN3EXT) \
+	  lib/Robotics/Tecan/Server.pm $(INST_MAN3DIR)/Robotics::Tecan::Server.$(MAN3EXT) \
+	  lib/Robotics/Fialab/Microsia.pm $(INST_MAN3DIR)/Robotics::Fialab::Microsia.$(MAN3EXT) \
+	  lib/Robotics/Tecan/Genesis/Compiler.pm $(INST_MAN3DIR)/Robotics::Tecan::Genesis::Compiler.$(MAN3EXT) \
+	  lib/Robotics/Fialab.pm $(INST_MAN3DIR)/Robotics::Fialab.$(MAN3EXT) \
+	  lib/Robotics/Tecan/Genesis/Liha.pm $(INST_MAN3DIR)/Robotics::Tecan::Genesis::Liha.$(MAN3EXT) \
 	  lib/Robotics/Tecan.pm $(INST_MAN3DIR)/Robotics::Tecan.$(MAN3EXT) \
-	  lib/Robotics/Tecan/Genesis/motor.pm $(INST_MAN3DIR)/Robotics::Tecan::Genesis::motor.$(MAN3EXT) \
+	  lib/Robotics/Tecan/Genesis/Session.pm $(INST_MAN3DIR)/Robotics::Tecan::Genesis::Session.$(MAN3EXT) \
+	  lib/Robotics/Tecan/Genesis/Roma.pm $(INST_MAN3DIR)/Robotics::Tecan::Genesis::Roma.$(MAN3EXT) \
+	  lib/Robotics/Fialab/Microsia/Compiler.pm $(INST_MAN3DIR)/Robotics::Fialab::Microsia::Compiler.$(MAN3EXT) \
+	  lib/Robotics/Manual.pod $(INST_MAN3DIR)/Robotics::Manual.$(MAN3EXT) \
 	  lib/Robotics/Tecan/Genesis.pm $(INST_MAN3DIR)/Robotics::Tecan::Genesis.$(MAN3EXT) \
 	  lib/Robotics.pm $(INST_MAN3DIR)/Robotics.$(MAN3EXT) \
-	  lib/Robotics/Tecan/Genesis/liquid.pm $(INST_MAN3DIR)/Robotics::Tecan::Genesis::liquid.$(MAN3EXT) 
+	  lib/Robotics/Tecan/Gemini.pm $(INST_MAN3DIR)/Robotics::Tecan::Gemini.$(MAN3EXT) \
+	  lib/Robotics/Tecan/Client.pm $(INST_MAN3DIR)/Robotics::Tecan::Client.$(MAN3EXT) 
 
 
 
@@ -504,8 +561,8 @@ metafile : create_distdir
 	$(NOECHO) $(ECHO) Generating META.yml
 	$(NOECHO) $(ECHO) '--- #YAML:1.0' > META_new.yml
 	$(NOECHO) $(ECHO) 'name:               Robotics' >> META_new.yml
-	$(NOECHO) $(ECHO) 'version:            0.21' >> META_new.yml
-	$(NOECHO) $(ECHO) 'abstract:           Simple software abstraction for physical robotics hardware!' >> META_new.yml
+	$(NOECHO) $(ECHO) 'version:            0.23' >> META_new.yml
+	$(NOECHO) $(ECHO) 'abstract:           Robotics hardware control and abstraction' >> META_new.yml
 	$(NOECHO) $(ECHO) 'author:' >> META_new.yml
 	$(NOECHO) $(ECHO) '    - Jonathan Cline <jcline@ieee.org>' >> META_new.yml
 	$(NOECHO) $(ECHO) 'license:            perl' >> META_new.yml
@@ -814,9 +871,9 @@ testdb_static :: testdb_dynamic
 # --- MakeMaker ppd section:
 # Creates a PPD (Perl Package Description) for a binary distribution.
 ppd :
-	$(NOECHO) $(ECHO) '<SOFTPKG NAME="$(DISTNAME)" VERSION="0,21,0,0">' > $(DISTNAME).ppd
+	$(NOECHO) $(ECHO) '<SOFTPKG NAME="$(DISTNAME)" VERSION="0,23,0,0">' > $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <TITLE>$(DISTNAME)</TITLE>' >> $(DISTNAME).ppd
-	$(NOECHO) $(ECHO) '    <ABSTRACT>Simple software abstraction for physical robotics hardware!</ABSTRACT>' >> $(DISTNAME).ppd
+	$(NOECHO) $(ECHO) '    <ABSTRACT>Robotics hardware control and abstraction</ABSTRACT>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <AUTHOR>Jonathan Cline &lt;jcline@ieee.org&gt;</AUTHOR>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <IMPLEMENTATION>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <DEPENDENCY NAME="Test-More" VERSION="0,0,0,0" />' >> $(DISTNAME).ppd
@@ -831,12 +888,22 @@ ppd :
 
 pm_to_blib : $(TO_INST_PM)
 	$(NOECHO) $(ABSPERLRUN) -MExtUtils::Install -e 'pm_to_blib({@ARGV}, '\''$(INST_LIB)/auto'\'', '\''$(PM_FILTER)'\'')' -- \
-	  lib/Robotics/Tecan/Genesis/config.pm blib/lib/Robotics/Tecan/Genesis/config.pm \
+	  lib/Robotics/Tecan/Server.pm blib/lib/Robotics/Tecan/Server.pm \
+	  lib/Robotics/Fialab/Microsia.pm blib/lib/Robotics/Fialab/Microsia.pm \
+	  lib/Robotics/Tecan/Genesis/Compiler.pm blib/lib/Robotics/Tecan/Genesis/Compiler.pm \
+	  lib/Robotics/Tecan/Genesis/Liha.pm blib/lib/Robotics/Tecan/Genesis/Liha.pm \
+	  lib/Robotics/Tecan/Genesis/Session.pm blib/lib/Robotics/Tecan/Genesis/Session.pm \
 	  lib/Robotics/Tecan.pm blib/lib/Robotics/Tecan.pm \
-	  lib/Robotics/Tecan/Genesis/motor.pm blib/lib/Robotics/Tecan/Genesis/motor.pm \
-	  lib/Robotics/Tecan/Genesis.pm blib/lib/Robotics/Tecan/Genesis.pm \
 	  lib/Robotics.pm blib/lib/Robotics.pm \
-	  lib/Robotics/Tecan/Genesis/liquid.pm blib/lib/Robotics/Tecan/Genesis/liquid.pm 
+	  lib/Robotics/Tecan/Gemini.pm blib/lib/Robotics/Tecan/Gemini.pm \
+	  lib/Robotics/Tecan/Client.pm blib/lib/Robotics/Tecan/Client.pm \
+	  lib/Robotics/Fialab/Serial.pm blib/lib/Robotics/Fialab/Serial.pm \
+	  lib/Robotics/.DS_Store blib/lib/Robotics/.DS_Store \
+	  lib/Robotics/Fialab.pm blib/lib/Robotics/Fialab.pm \
+	  lib/Robotics/Fialab/Microsia/Compiler.pm blib/lib/Robotics/Fialab/Microsia/Compiler.pm \
+	  lib/Robotics/Tecan/Genesis/Roma.pm blib/lib/Robotics/Tecan/Genesis/Roma.pm \
+	  lib/Robotics/Manual.pod blib/lib/Robotics/Manual.pod \
+	  lib/Robotics/Tecan/Genesis.pm blib/lib/Robotics/Tecan/Genesis.pm 
 	$(NOECHO) $(TOUCH) pm_to_blib
 
 

@@ -24,22 +24,21 @@ has 'FID' => ( is => 'rw', isa => 'Maybe[Win32::Pipe]' );
 =head1 NAME
 
 Robotics::Tecan::Gemini - (Internal module)
-
 Software-to-Software interface for Tecan Gemini Win32
 Application for controlling robotics hardware
 
 =head1 VERSION
 
-Version 0.22
+Version 0.23
 
 =cut
 
-our $VERSION = '0.22';
+our $VERSION = '0.23';
 
 =head1 SYNOPSIS
 
-Gemini software interface support for Robotics::Tecan.  The
-Gemini software controlls the Tecan robotics in legacy
+Gemini software interface support for Robotics::Tecan.  
+The Gemini software controls the Tecan robotics in legacy
 environments.  In Perl Robotics environment, the Robotics
 modules use this module to send (pipe) hardware commands
 through Gemini software to the physical hardware.
@@ -241,7 +240,6 @@ sub BUILD {
 
 sub attach {
     my ($self, %params) = @_;
-    
 =begin text
     # Notes on gemini named pipe:
     #   * must run gemini application first
@@ -265,49 +263,121 @@ sub attach {
 
     $self->attached( 1 );
     # Probe for Genesis
-    $self->object()->{HWTYPE} = "GENESIS"; 
-    $self->object()->{HWNAME} = "M1";
+    # Fake the following 2 variables to probe
+    $self->object()->HWTYPE( "GENESIS" ); 
+    $self->object()->HWNAME( "M1" );
+    # Probe for proper h/w compatibility
     $self->write("GET_VERSION");
-    $self->object()->{VERSION} = $self->read() || "";
-    print STDERR "\nVersion: ". $self->object()->{VERSION}. "\n" if $Debug;
+    $self->object()->VERSION( $self->read() );
+    print STDERR "\nVersion: ". $self->object()->VERSION(). "\n" if $Debug;
     $self->write("GET_RSP");
-    $self->object()->{HWTYPE} = $self->read() || "";
-    print STDERR "\nHardware: ". $self->object()->{HWTYPE}. "\n" if $Debug;
+    $self->object()->HWTYPE( $self->read() );
+    print STDERR "\nHardware: ". $self->object()->HWTYPE(). "\n" if $Debug;
 
-    if (!($self->object()->{HWTYPE} =~ /GENESIS/i)) {
+    if (!($self->object()->HWTYPE() =~ /GENESIS/i)) {
         $self->detach();
         croak "Robotics is not Genesis; reports '".
-                $self->object()->{HWTYPE}. "': closed named-pipe\n";
+                $self->object()->HWTYPE(). "': closed named-pipe\n";
         return 0;
     }
 
     # XXX assign this via arg to new, user discovers value from query
     # The HWALIAS and HWNAME should be set via hardware probe, user
     # discovers value from query
-    $self->{HWALIAS} = "genesis0";
-    $self->{HWNAME} = "M1";
-    warn "ATTACHED ". __PACKAGE__. "\n";
+    $self->HWALIAS( "genesis0" );
+    $self->HWNAME("M1");
+    warn "ATTACHED via ". __PACKAGE__. "\n";
 
-    my $m = $self->{HWNAME};
+    my $m = $self->object()->HWNAME();
+    my $reply;
+
+    for my $addr ("M", "A", "P", "R") { 
+        $self->write("COMMAND;". $addr. "1". "REE");
+        $reply = $self->read();
+        if ($reply =~ m/0;(.*)/) {
+            my $status = $1;
+            if (!$status) { 
+                confess __PACKAGE__. " arm '$addr' status error!";
+            }
+            if ($status =~ m/[^@]/) { 
+                warn __PACKAGE__. " arm '$addr' motor error!";
+            }
+        }
+    }
+
     # Scan and get hardware device specifics
     # no. arms, diluters, options, posids, 
     # romas, uniports, options, voptions
-    my $d;
-    for $d (0 .. 7) { 
-        $self->write($m."RDS".$d.",1");
-        $self->{HWSPEC} .= $self->read();
+    $self->write("COMMAND;A1RNT1");
+    my $num_tips = $self->read();
+    my @devices;
+    if ($num_tips =~ m/0;(\d+)/) { 
+        $num_tips = $1;
+        for my $d (0 .. 7) { 
+            $self->write("COMMAND;". $m."RSD".$d.",1");
+            $reply = $self->read();
+            if ($reply =~ m/0;(\d+)/) { 
+                push(@devices, $1);
+            }
+            else { 
+                push(@devices, 0);
+            }
+        }
     }
-    print STDERR "\nHW Spec: $self->{HWSPEC}\n" if $Debug;
+    else { 
+        # technically speaking A1RNT1 num tips should
+        # always equal the M1RSD num diluters (I assume)
+        $num_tips = 0;
+    }
+    $self->object()->HWSPEC(
+            "lihas=". $devices[0].
+            ":diluters=". $devices[1].
+            ":options=". $devices[2].
+            ":posids=". $devices[3].
+            ":romas=". $devices[4].
+            ":uniports=". $devices[5].
+            ":optionst=". $devices[6].
+            ":optionsv=". $devices[7]         
+            );
+    print STDERR "\nHW Spec: ". $self->object()->HWSPEC(). "\n" if $Debug;
+    # Get firmware revision of LIHA devices (syringe pumps)
+    my $maxdev;
+    my @dev_versions;
+    for my $d (1 .. $num_tips) { 
+        $self->write("COMMAND;D". $d. "Q23");
+        $reply = $self->read();
+        if ($reply =~ /^0;(.*)/) { 
+            # found
+            push(@dev_versions, "D". $d. "=". $1);
+
+            $maxdev = $d;
+        }
+    }
+    $self->object()->HWDEVICES( join(":", @dev_versions) );
+    print STDERR "\nHW Liquid Devices: ". $self->object()->HWDEVICES(). "\n"
+            if $Debug;
+    $self->object()->TIP_MAX( $maxdev );
 
     # Scan and Get hardware options (optional i/o board)
     # "maximum two different devices accessible" using RRS
-    $self->write($m."ARS");  # SCAN
-    $self->read();
-    for $d (1 .. 2) { 
-        $self->write($m."RRS".$d); # Report device on chN
-        $self->{HWOPTION} .= $self->read();
+    @devices = ();
+    if (0) { 
+        # TODO
+        # Needs test: currently hangs system (no io board attached on unit)
+
+        $self->write($m."ARS");  # SCAN; no reply to this command
+        ## no reply to ARS ## $reply = $self->read();
+        for my $d (1 .. 2) { 
+            $self->write($m."RRS".$d); # Report device on chN
+            my $reply = $self->read();
+            if ($reply =~ /^0;(.*)/) { 
+                push(@devices, "D". $d. "=". $1);
+            }
+        }
+        $self->HWOPTION( join(":", @devices) );
+        print STDERR "\nHW Options: ". $self->HWOPTION(). "\n" if $Debug;
     }
-    print STDERR "\nHW Options: $self->{HWOPTION}\n" if $Debug;
+    
 }
 
 sub startService {
@@ -349,6 +419,7 @@ sub write {
         $data =~ s/\s*$//go;
         if ($self->{FID}) {
             $self->{FID}->Write($data . "\0");
+            print STDERR ">$data\n" if $Debug;
         }
         else {
             warn "not reached";
@@ -378,7 +449,7 @@ sub read {
         }
     }
     if ($data) { 
-        print STDERR "<$data" if $Debug;
+        print STDERR "<$data\n" if $Debug;
         $data =~ s/[\r\n\t\0]//go;
         $data =~ s/^\s*//go;
         $data =~ s/\s*$//go;
@@ -410,7 +481,7 @@ Jonathan Cline, C<< <jcline at ieee.org> >>
 =head1 BUGS
 
 Please report any bugs or feature requests to
-C<bug-bio-robotics at rt.cpan.org>, or through the web
+C<bug-robotics at rt.cpan.org>, or through the web
 interface at
 L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Robotics>.  I
 will be notified, and then you'll automatically be notified of

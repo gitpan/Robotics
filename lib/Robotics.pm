@@ -12,7 +12,8 @@ use IO::Socket;
 use YAML::XS;
 
 our @Devices = (
-    "Robotics::Tecan"
+    "Robotics::Tecan",
+    "Robotics::Fialab"
 );
 
 has 'alias' => ( is => 'rw' );
@@ -32,11 +33,35 @@ Robotics - Robotics hardware control and abstraction
 
 =head1 VERSION
 
-Version 0.22
+Version 0.23
 
 =cut
 
-our $VERSION = '0.22';
+our $VERSION = '0.23';
+
+
+=head1 SYNOPSIS
+
+Provides local communication to robotics hardware devices, related
+peripherals, or network communication to these devices.  Also
+provides a high-level, object oriented software interface to
+abstract the low level robotics commands or low level robotics
+hardware.  Environmental configuration is provided with a
+configuration file in YAML format.  Allows other hardware device
+drivers to be plugged into this module.
+
+Simple examples are provided in the examples/ directory of the
+distribution.
+
+
+
+Nominclature note:  The name "Robotics" is used in full, rather than
+"Robot", to distinguish mechanical robots from the many
+internet-spidering software modules or software user agents commonly
+(and erroneously) referred to as "robots".  Robotics has motors;
+both the internet & software do not!
+
+=cut
 
 # Application should always perform device probing as first thing,
 # so this is done as 'new'
@@ -76,6 +101,8 @@ sub probe {
     }
 
 	# Add other robotics systems here
+	
+	# TODO Perhaps scan serial ports using Hardware::PortScanner
 }
 
 sub printDevices {
@@ -139,124 +166,199 @@ sub _try_load
 }
 
 sub configure {
-    # XXX TODO
-
+    my $self = shift;
+    my $infile = shift || croak "cant open configuration file";
+	
+	open(IN, $infile) || return 1;
+	my $s = do { local $/ = <IN> };
+    $self->{CONFIG} = YAML::XS::Load($s) || return 2;
+    
+    warn "Configuring from $infile\n";
+    my $root;
+    my $model;
+    for $root (keys %{$self->{CONFIG}}) {
+        if ($root =~ m/tecan/i) { 
+            warn "Configuring $root\n";
+            for $model (keys %{$self->{CONFIG}->{$root}}) {
+                warn "Configuring $model\n";
+                if ($model =~ m/genesis/i) {
+                    Robotics::Tecan::Genesis::configure(
+                            $self, $self->{CONFIG}->{$root}->{$model});                        
+                }
+            }
+        }
+        elsif ($root =~ m/objects/i) { 
+            die "Configuring $root\n";
+            #Robotics::Objects::configure($self, $self->{CONFIG}->{$root});        
+        }
+    }
+    return 0;
 }
 
 
-=head1 SYNOPSIS
+# Convert well string to well number
+# Returns:  
+# >0 well number if success
+# 0 if error
+# 
+sub convertWellStringToNumber {
+    my $s = $_[0];  # string
+    my $size = $_[1] || 96;     # size of plate
+    my $orient = $_[2] || "L";  # orientation of plate
 
-Provides local communication to robotics hardware devices, related
-peripherals, or network communication to these devices.  Also
-provides a high-level, object oriented software interface to
-abstract the low level robotics commands or low level robotics
-hardware.  Environmental configuration is provided with a
-configuration file in YAML format.  Allows other hardware device
-drivers to be plugged into this module.
-
-Simple examples are provided in the examples/ directory of the
-distribution.
-
-This main Robotics.pm module is an abstraction layer for many types
-of robotics devices and related peripheral hardware.  Other
-hardware, motor controllers, CNC, or peripheral devices may exist
-below this module, or under Devices::, or under other libraries, and
-new implementation is welcomed.
-
-Nominclature note:  The name "Robotics" is used in full, rather than
-"Robot", to distinguish mechanical robots from the many
-internet-spidering software modules or software user agents commonly
-(and erroneously) referred to as "robots".  Robotics has motors;
-both the internet & software do not!
-
-Technical details: 
-This & related modules use YAML to allow users (and the module
-itself) to use configuration data in a readable way.  The
-configuration data contains:  physical locations of objects to
-interact with, physical points in space to navigate from/to,
-dictionary definitions, equipment lists, and so on, as well as the
-tokens for the low-level robotics commands.
-
-To use this software with locally-connected robotics hardware:
-
-=item Use the module(s)
-
-=item Use the query method to probe for connected hardware or
-(in the future) remote robotics hardware servers via the network
-
-=item Create a 'new' robotics object from the desired hardware
-
-=item Use the robotics object to 'Attach' to the robotics hardware
-for communications
-
-=item Use the robotics object to control the physical hardware,
-perhaps using very high level semantics which translate into
-multiple lower-level robotics commands.
-
-Example (Please see currently working examples in the distribution):
-
-    use Robotics;
-    use Robotics::Tecan;
-
-    my %hardware = Robotics::query();
-    if ($hardware{"Tecan-Genesis"} eq "ok") { 
-    	print "Found locally-connected Tecan Genesis robotics!\n";
+    my $row = substr($s, 0, 1);
+    my $col = substr($s, 1);
+    $row = ord($row) - 64;
+    if ($row < 0 || $row > 16) { 
+        warn "not a well string, '$s'";
+        return $s;
     }
-    elsif ($hardware{"Tecan-Genesis"} eq "busy") {
-    	print "Found locally-connected Tecan Genesis robotics but it is busy moving!\n";
-    	exit -2;
+    if ($col > 12 && $size == 96) { 
+        warn "bad well string $s";
+        return 0;
+    }
+    if ($col > 24 && $size == 384) { 
+        warn "bad well string $s";
+        return 0;
+    }
+    if ($size == 96) { 
+        if ($orient eq "L") { 
+            return ($col - 1) * 8 + $row;
+        }
+        elsif ($orient eq "P") { 
+            return ($row - 1) * 12 + $col;
+        }
+        else {
+            warn "bad well string $s\n";
+            return 0;
+        }
+    }
+    if ($size == 384) { 
+        if ($orient eq "L") { 
+            return ($col - 1) * 16 + $row;
+        }
+        elsif ($orient eq "P") { 
+            return ($row - 1) * 24 + $col;
+        }
+        else {
+            warn "bad well string $s\n";
+            return 0;
+        }
+    }
+}
+
+# Convert well number to well (x,y) number
+# Returns:  
+# well array (x,y) if success
+# 0 if error
+# 
+sub convertWellNumberToXY {
+    return convertWellStringToXY(
+            convertWellNumberToString(@_));
+            
+}
+
+# Convert well string to well (x,y) number
+# Returns:  
+# well array (x,y) if success
+# 0 if error
+# 
+sub convertWellStringToXY {
+    my $s = $_[0];  # string
+    my $size = $_[1] || 96;     # size of plate
+    my $orient = $_[2] || "L";  # orientation of plate
+
+    my $row = substr($s, 0, 1);
+    my $col = substr($s, 1);
+    $row = ord($row) - 64;
+    if ($row < 0 || $row > 16) { 
+        warn "not a well string, '$s'";
+        return $s;
+    }
+    if ($col > 12 && $size == 96) { 
+        warn "bad well string $s";
+        return 0;
+    }
+    if ($col > 24 && $size == 384) { 
+        warn "bad well string $s";
+        return 0;
+    }
+    if ($size == 96) { 
+        if ($orient eq "L") { 
+            return ($col, $row);
+        }
+        elsif ($orient eq "P") { 
+            return ($row, $col);
+        }
+        else {
+            warn "bad well string $s\n";
+            return 0;
+        }
+    }
+    if ($size == 384) { 
+        if ($orient eq "L") { 
+            return ($col, $row);
+        }
+        elsif ($orient eq "P") { 
+            return ($row, $col);
+        }
+        else {
+            warn "bad well string $s\n";
+            return 0;
+        }
+    }
+}
+
+
+# Convert well number to well string
+# Returns:  
+# string if success
+# "" if error
+# 
+sub convertWellNumberToString {
+    my $n = $_[0];  # number
+    my $size = $_[1] || 96;     # size of plate
+    my $orient = $_[2] || "L";  # Landscape or Portrait orientation
+
+    my $col;
+    my $row;
+    my $s;
+    if ($n < 1) { 
+        warn "not a well number '$n'";
+        return $n;
+    }
+    elsif ($n <= 96 && $size == 96) {
+        if ($orient eq "P") { 
+            $row = int(($n - 1) / 12) + 1;
+            $col = ($n - (($col - 1) * 12));
+        }
+        elsif ($orient eq "L") { 
+            $col = int(($n-1) / 8) + 1;
+            $row = ($n - (($col - 1) * 8));
+        }
+        if ($row == 0) { $row = 8; }
+        $s = chr(64+$row); # I bet no one has EBCDIC anymore
+    }
+    elsif ($n <= 384 && $size == 384) {
+        if ($orient eq "P") { 
+            $row = int(($n-1) / 24) + 1;
+            $col = ($n - (($col - 1) * 24));
+        }
+        elsif ($orient eq "L") { 
+            $col = int(($n-1) / 16) + 1;
+            $row = ($n - (($col - 1) * 16));
+        }
+        if ($row == 0) { $row = 16; }
+        $s = chr(64+$row);
     }
     else {
-    	print "No robotics hardware connected\n";
-    	exit -3;
+        warn "bad well number '$n'\n";
     }
-    my $tecan = Robotics->new("Tecan") || die;
-    $tecan->attach() || die;    # initiate communications 
-    $tecan->configure("my-worktable.yaml");      # Load YAML configuration file (optional)
-    $tecan->park("roma0");      # move robotics arm to 'home' position
-    $tecan->move("roma0", "platestack", "s");    # move robotics named arm to vector start
-    $tecan->grip("roma0");    # grip the plate with the named arm
-    $tecan->move("roma0", "platestack", "e");    # move robotics named arm to vector end
-    # TBD $tecan->fetch_tips($tip, $tip_rack);   # move liquid handling arm to get tips
-    # TBD $tecan->liquid_move($aspiratevol, $dispensevol, $from, $to);
-    ...
 
-To use this software with remote robotics hardware over the network:
+    $s .= $col;
 
-  # On the local machine, run:
-    use Robotics;
-    use Robotics::Tecan;
-
-	my %hardware = Robotics::query();
-    my $tecan = Robotics->new("Tecan") || die "no tecan found\n";
-    $tecan->attach() || die;
-    # TBD $tecan->configure("my work table configuration file") || die;
-    # Run the server and process commands
-    while (1) {
-      $error = $tecan->server(passwordplaintext => "0xd290"); # start the server
-      # Internally runs communications between client->server->robotics
-      if ($tecan->lastClientCommand() =~ /^shutdown/) { 
-        last;   
-      
-    }
-    $tecan->detach();   # stop server, end robotics communciations
-    exit(0);
-
-  # On the remote machine (the client), run:
-    use Robotics;
-    use Robotics::Tecan;
-
-    my $server = "heavybio.dyndns.org:8080";
-    my $password = "0xd290";
-    my $tecan = Robotics->new("Tecan");
-    $tecan->connect($server, $mypassword) || die;
-    $tecan->home();
-    $tecan->configure("my-worktable.yaml");      # Load YAML configuration file (optional)
-     
-    ... same as first example with communication automatically routing over network ...
-    $tecan->detach();   # end communications
-    exit(0);
-
+    return $s;
+}
 
 =head1 EXPORT
 
@@ -264,23 +366,10 @@ No exported functions
 
 =head1 FUNCTIONS
 
-=head2 query
+=head2 new
 
-Query the local machine for connected hardware.
-
-The user application must call this method to find hardware prior to 
-attempting to access the hardware.
-
-Developer design note: 
-Robotics modules must all provide a mechanism for finding attached
-hardware and return the key-value.  Communication must not allowed
-to any hardware device unless queried (probed) for status first.
-This mechanism eliminates operating system issues (hanging device
-drivers, etc) when the hardware does not exist or is not ready for
-communication.
-
-=cut
-
+Probes the local machine for connected hardware and returns the
+device tree.
 
 
 =head2 configure
@@ -294,18 +383,94 @@ Returns:
 1 if file error,
 2 if configuration error.
 
-=cut
 
+=head2 convertWellStringToNumber
 
-=head1 IMPLEMENTATION NOTES
+Helper function.
 
+Converts a microtiter plate well string (such as "B7") 
+to a well number (such as 39), depending on 
+plate size and plate orientation.  Well #1 is defined
+as "A1".
 
-Many of these robotics devices are designed 
-primarily or exclusively for MSWin systems.  This means module
-requirements and internal code must be activeperl and MSWin friendly.
-This author suggests discussing with the manufacturer(s)
-requesting more Unix/OSX/POSIX compatibility when appropriate.
+Arguments:
 
+=item Well String.  Should be in the range: "A1" .. [total size of plate]
+
+=item Size of plate (number of wells).  Example: 96 or 384.
+Default is 96.
+
+=item Orientation of plate, either "L" for landscape 
+or "P" for portrait (default "L").  Landscape means, when
+looking at the plate on a table, the coordinates are defined 
+for the long side running left-to-right, and the beginning
+row is the furthest away. 
+
+Returns:
+
+=item Number > 0 (such as 43), if success.
+
+=item 0, if error.
+
+    
+=head2 convertWellNumberToString
+
+Helper function.
+
+Converts a microtiter plate well number (such as 54) 
+to a co-ordinate string (such as "D5"), depending on 
+plate size and plate orientation.  Well #1 is defined
+as "A1".
+
+Arguments:
+
+=item Well number.  Should be in the range: 1 .. [total size]
+
+=item Size of plate (number of wells).  Example: 96 or 384.
+Default is 96.
+
+=item Orientation of plate, either "L" for landscape 
+or "P" for portrait (default "L").  Landscape means, when
+looking at the plate on a table, the coordinates are defined 
+for the long side running left-to-right. 
+
+Returns:
+
+=item String (such as "A1"), if success.
+
+=item Null string, if error.
+
+    
+=head2 convertWellStringToXY
+
+Converts a microtiter plate well string (such as "E8") to an 
+(x,y) coordinate array (such as (5,6)).
+
+Arguments:
+
+=item Well coordinate string.  The top left well is
+defined as A1.
+
+=item Size of plate (number of wells).  Example: 96 or 384.
+Default is 96.
+
+=item Orientation of plate, either "L" for landscape 
+or "P" for portrait (default "L").  Landscape means, when
+looking at the plate on a table, the coordinates are defined 
+for the long side running left-to-right, and the beginning
+row is the furthest away. 
+
+Returns:
+
+=item Array (such as (8,8)), if success.
+
+=item 0, if error.
+
+=head2 convertWellNumberToXY
+
+Uses the other convertWell functions to convert a
+well number (1 .. (total size)) into (x,y) coordinates.
+See previous functions for args and return values.
 
 
 =head1 AUTHOR
@@ -314,11 +479,9 @@ Jonathan Cline, C<< <jcline at ieee.org> >>
 
 =head1 BUGS
 
-Please report any bugs or feature requests to C<bug-bio-robotics at rt.cpan.org>, or through
+Please report any bugs or feature requests to C<bug-robotics at rt.cpan.org>, or through
 the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Robotics>.  I will be notified, and then you'll
 automatically be notified of progress on your bug as I make changes.
-
-
 
 
 =head1 SUPPORT

@@ -5,18 +5,20 @@ use warnings;
 use strict;
 
 use Moose::Role;
+# use Net::EasyTCP 
 
 #extends 'Robotics::Tecan', 'Robotics::Tecan::Genesis';
 
 # This module is not meant for direct inclusion.
 # Use it "with" Tecan::Genesis.
 
+has 'EXPECT_RECV' => ( is => 'rw', isa => 'Maybe[HashRef]' );
+
 my $Debug = 1;
 
 =head1 NAME
 
 Robotics::Tecan::Server - (Internal module)
-
 Software-to-Software interface for Tecan Gemini, network server.
 Application for controlling robotics hardware
 
@@ -29,7 +31,7 @@ Version 0.22
 our $VERSION = '0.22';
 
 
-
+# Consider re-writing to use Net::EasyTCP
 sub server {
     my ($self, %params) = @_;
     use IO::Socket;
@@ -37,7 +39,7 @@ sub server {
 
     die "must supply password with server()\n" 
         unless $params{password};
-        
+
     my $port = $params{port} || 8088;
 
     my $socket = IO::Socket::INET->new( Proto     => 'tcp',
@@ -111,7 +113,7 @@ Start network server.  The server provides network access to the
 locally-attached robotics.
 
 =cut
- 
+
 
 =head1 AUTHOR
 
@@ -120,7 +122,7 @@ Jonathan Cline, C<< <jcline at ieee.org> >>
 =head1 BUGS
 
 Please report any bugs or feature requests to
-C<bug-bio-robotics at rt.cpan.org>, or through the web
+C<bug-robotics at rt.cpan.org>, or through the web
 interface at
 L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Robotics>.  I
 will be notified, and then you'll automatically be notified of

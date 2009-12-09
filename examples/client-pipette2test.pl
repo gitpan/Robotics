@@ -71,28 +71,29 @@ sub checkerr7 {
 
 sub Main {
 
+    # Load worktable
+    $hw->configure("client-traymove1test.yaml");    
+
     $hw->status();
     $_ = $hw->initialize();
     exit -3 if !/IDLE/i;
     $hw->status();
 
     $hw->park("roma0");
-    checkerr7 $hw->move("roma0", "nonesuch-expect-error7");
+    checkerr7 $hw->move(motor => "roma0", to => "nonesuch-expect-error7");
     checkok $hw->grip("roma0", 'o', 120);
-    checkok $hw->move("roma0", "sampletray-hover");
-    checkok $hw->move("roma0", "sampletray-place");
+    checkok $hw->move(motor => "roma0", to => "sampletray-hover");
+    checkok $hw->move(motor => "roma0", to => "sampletray-place");
     checkok $hw->grip("roma0");
-    checkok $hw->move("roma0", "sampletray-hover");
+    checkok $hw->move(motor => "roma0", to => "sampletray-hover");
     checkok $hw->park("roma0");
-    checkok $hw->move("roma0", "sampletray-hover");
-    checkok $hw->move("roma0", "sampletray-place");
+    checkok $hw->move(motor => "roma0", to => "sampletray-hover");
+    checkok $hw->move(motor => "roma0", to => "sampletray-place");
     checkok $hw->grip("roma0", 'o', 120);
-    checkok $hw->move("roma0", "sampletray-hover");
+    checkok $hw->move(motor => "roma0", to => "sampletray-hover");
     checkok $hw->park("roma0");
 
     checkok $hw->park("liha");
-
-
 
     $hw->detach();
 

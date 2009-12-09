@@ -57,12 +57,19 @@ exit 0;
 
 sub checkok {
     my $s = $_[0];
+    my $critical = $_[1];
     my $want = "0";
+    if (!defined($critical)) { $critical = 1; }
     if (!grep(/$want/, $s)) { 
-        die "Robot err $s, wanted $want\n";
+        if ($critical == 0) { 
+            warn "Robot err $s, wanted $want\n";
+        }
+        else { 
+            die "Robot err $s, wanted $want\n";
+        }
     }
     else {
-        warn "Got: $s\n";
+        warn "OK ($s)\n";
     }
 }
 sub checkerr7 {
@@ -72,7 +79,7 @@ sub checkerr7 {
         die "Robot err $s, wanted $want\n";
     }
     else {
-        warn "Got: $s\n";
+        warn "OK ($s)\n";
     }
 
 }
@@ -90,16 +97,16 @@ sub Main {
 
     $hw->park("liha");
     $hw->park("roma0");
-    checkerr7 $hw->move("roma0", "nonesuch-expect-error7");
-    checkok $hw->grip("roma0", 'o', 120);
-    checkok $hw->move("roma0", "sampletray-hover");
-    checkok $hw->move("roma0", "sampletray-place");
-    checkok $hw->grip("roma0");
-    checkok $hw->move("roma0", "sampletray-hover");
+    checkerr7 $hw->move(motor => "roma0", to => "nonesuch-expect-error7");
+    checkok $hw->move(motor => "roma0", to => "sampletray-hover",
+        grip => 122 * 10); # in 0.1mm
+    checkok $hw->move(motor => "roma0", to => "sampletray-place");
+    checkok ($hw->grip("roma0"), 0);
+    checkok $hw->move(motor => "roma0", to => "sampletray-hover");
 
-    checkok $hw->move("roma0", "shaker-hover");
-    checkok $hw->move("roma0", "shaker-put");
-    checkok $hw->grip("roma0", 'o', 120);
+    checkok $hw->move(motor => "roma0", to => "shaker-hover");
+    checkok $hw->move(motor => "roma0", to => "shaker-put");
+    checkok $hw->grip("roma0", 'o', 122);   # in mm
 
     my @path = (
         "shakerlock-hover", 
@@ -112,14 +119,14 @@ sub Main {
         );
     checkok $hw->move_path("roma0", @path);
 
-    checkok $hw->move("roma0", "shaker-take");
-    checkok $hw->grip("roma0");
-    checkok $hw->move("roma0", "shaker-hover");
+    checkok $hw->move(motor => "roma0", to => "shaker-take");
+    checkok ($hw->grip("roma0"), 0);
+    checkok $hw->move(motor => "roma0", to => "shaker-hover");
 
-    checkok $hw->move("roma0", "sampletray-hover");
-    checkok $hw->move("roma0", "sampletray-place");
+    checkok $hw->move(motor => "roma0", to => "sampletray-hover");
+    checkok $hw->move(motor => "roma0", to => "sampletray-place");
     checkok $hw->grip("roma0", 'o', 120);
-    checkok $hw->move("roma0", "sampletray-hover");
+    checkok $hw->move(motor => "roma0", to => "sampletray-hover");
     checkok $hw->park("roma0");
 
     checkok $hw->park("liha");

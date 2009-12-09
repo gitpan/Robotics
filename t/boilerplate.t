@@ -50,7 +50,8 @@ TODO: {
 
   module_boilerplate_ok('lib/Robotics.pm');
   module_boilerplate_ok('lib/Robotics/Tecan.pm');
-  module_boilerplate_ok('lib/Robotics/Tecan/Genesis/motor.pm');
+  module_boilerplate_ok('lib/Robotics/Tecan/Genesis.pm');
+  module_boilerplate_ok('lib/Robotics/Tecan/Gemini.pm');
 
 
 }

@@ -15,6 +15,14 @@ use Moose::Role;
 
 use YAML::XS;
 
+
+my $Debug = 1;
+
+=head1 NAME
+
+Robotics::Tecan::Genesis::Session - (Internal module)
+Handler for a user session to the physical hardware
+
 =head2 configure
 
 Internal function.  Configures internal data from user file.
@@ -24,19 +32,22 @@ Returns 0 on error, status string if OK.
 =cut
 
 sub configure {
+	# self is Robotics::Tecan
+	
 	my $self    = shift;
     my $cref    = shift;
-
     my $section;
     for $section (keys %{$cref}) {
         warn "Configuring $section\n";
         if ($section =~ m/points/i) {
-            $self->{POINTS} = $cref->{$section};
+            $self->POINTS( $cref->{$section} );
+        }
+        elsif ($section =~ m/objects/) { 
+            $self->OBJECTS( $cref->{$section} );
         }
     }
-        
-    print keys %{$self->{POINTS}};
-    return 0;
+
+    return 1;
 }
 
 1;    # End of Robotics::Tecan::Genesis::Session

@@ -80,11 +80,11 @@ sub Main {
     exit -3 if !/IDLE/i;
 
     $hw->park("roma0");
-    checkerr7 $hw->move("roma0", "nonesuch-expect-error7");
+    checkerr7 $hw->move(motor => "roma0", to => "nonesuch-expect-error7");
     checkok $hw->grip("roma0", 'o', 120);
-    checkok $hw->move("roma0", "jc-traypickup", 'e', 1);
+    checkok $hw->move(motor => "roma0", to => "jc-traypickup", dir => 'e', site => 1);
     checkok $hw->grip("roma0");
-    checkok $hw->move("roma0", "jc-traypickup", 's', 1);
+    checkok $hw->move(motor => "roma0", to => "jc-traypickup", dir => 's', site => 1);
     checkok $hw->park("roma0");
 
     checkok $hw->park("liha");
